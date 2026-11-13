@@ -88,7 +88,7 @@ class _ReportView extends StatelessWidget {
                 width: tileWidth,
                 label: 'Phone unlocks',
                 value:
-                    '$unlocks · ${(unlocks / WeeklyReport.days).round()}/day',
+                    '$unlocks · ${formatAverage(unlocks / WeeklyReport.days)}/day',
               ),
             if (report.notificationsAvailable)
               _StatTile(

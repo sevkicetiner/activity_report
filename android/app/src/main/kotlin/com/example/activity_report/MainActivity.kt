@@ -26,6 +26,10 @@ class MainActivity : FlutterActivity() {
         // Two foreground events closer than this count as one "open"
         // (switching activities inside the same app is not a new open).
         private const val OPEN_GAP_MS = 5_000L
+
+        // SCREEN_NON_INTERACTIVE (16), KEYGUARD_SHOWN (17), DEVICE_SHUTDOWN (26).
+        // Plain ints so older devices, which never emit them, need no API check.
+        private val SESSION_END_EVENTS = setOf(16, 17, 26)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -101,8 +105,13 @@ class MainActivity : FlutterActivity() {
         val notifs = HashMap<String, Int>()
         val unlocks = IntArray(DAYS)
         val unlocksAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-        val foregroundSince = HashMap<String, Long>()
         val lastBackground = HashMap<String, Long>()
+
+        // Only one app is on screen at a time, so we track ONE open session.
+        // A missing background event (process killed, screen off) would
+        // otherwise leave a session open for days and push a day past 24h.
+        var currentPkg: String? = null
+        var currentSince = 0L
 
         fun addInterval(pkg: String, from: Long, to: Long) {
             val arr = daily.getOrPut(pkg) { LongArray(DAYS) }
@@ -111,6 +120,11 @@ class MainActivity : FlutterActivity() {
                 val e = minOf(to, dayStarts[d + 1])
                 if (e > s) arr[d] += e - s // splits sessions across midnight
             }
+        }
+
+        fun closeSession(pkg: String, at: Long) {
+            addInterval(pkg, currentSince, at)
+            lastBackground[pkg] = at
         }
 
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -124,25 +138,37 @@ class MainActivity : FlutterActivity() {
                 if (d != null) unlocks[d]++
                 continue
             }
+            // Screen off, lock or shutdown ends whatever was on screen.
+            if (ev.eventType in SESSION_END_EVENTS) {
+                currentPkg?.let { closeSession(it, ev.timeStamp) }
+                currentPkg = null
+                continue
+            }
             val pkg = ev.packageName ?: continue
             when (ev.eventType) {
                 UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                    foregroundSince[pkg] = ev.timeStamp
+                    val prev = currentPkg
+                    if (prev != null && prev != pkg) closeSession(prev, ev.timeStamp)
+                    if (prev != pkg) {
+                        currentPkg = pkg
+                        currentSince = ev.timeStamp
+                    }
                     val lastBg = lastBackground[pkg]
-                    if (lastBg == null || ev.timeStamp - lastBg > OPEN_GAP_MS) {
+                    if (prev != pkg && (lastBg == null || ev.timeStamp - lastBg > OPEN_GAP_MS)) {
                         opens[pkg] = (opens[pkg] ?: 0) + 1
                     }
                 }
                 UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                    lastBackground[pkg] = ev.timeStamp
-                    val start = foregroundSince.remove(pkg)
-                    if (start != null) addInterval(pkg, start, ev.timeStamp)
+                    if (pkg == currentPkg) {
+                        closeSession(pkg, ev.timeStamp)
+                        currentPkg = null
+                    }
                 }
                 NOTIFICATION_INTERRUPTION -> notifs[pkg] = (notifs[pkg] ?: 0) + 1
             }
         }
-        // Apps still in the foreground right now.
-        for ((pkg, start) in foregroundSince) addInterval(pkg, start, now)
+        // The app on screen right now.
+        currentPkg?.let { addInterval(it, currentSince, now) }
 
         val pkgs = (daily.keys + opens.keys + notifs.keys).filter { isLaunchable(it) }.toSet()
         val apps = pkgs.map { pkg ->

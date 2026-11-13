@@ -19,6 +19,10 @@ My short answer: **practical and honest beats comprehensive.** I built a small r
 
 *Screenshots use the demo data source (iOS simulator).*
 
+On Android, the app first explains why it needs Usage access:
+
+<img src="docs/screenshots/android_permission.png" width="280">
+
 ## Key decisions and trade-offs
 
 | Decision | Why | What I gave up |
@@ -69,7 +73,7 @@ So a custom-designed report like this one cannot be built on iOS today. On iOS t
 
 ## How the Android numbers are computed
 
-- **Time**: I pair `MOVE_TO_FOREGROUND` / `MOVE_TO_BACKGROUND` events and add the interval to each day it overlaps, so a session crossing midnight is split correctly. Apps still open "right now" are closed at the current time.
+- **Time**: I pair `MOVE_TO_FOREGROUND` / `MOVE_TO_BACKGROUND` events and add the interval to each day it overlaps, so a session crossing midnight is split correctly. Only one app is on screen at a time, so a new foreground app, screen off, lock or shutdown closes the open session. Without this, a missing background event (process killed) kept a session open for days and pushed a day past 24 hours; I found that by testing on a real emulator.
 - **Opens**: foreground events count as an open only if the app was away for more than 5 seconds. Without this, moving between screens inside one app would inflate the count.
 - **Unlocks**: `KEYGUARD_HIDDEN` events (public since Android 9), counted per day. On older versions the tile is hidden.
 - **Installed**: `firstInstallTime` within the 7-day window.

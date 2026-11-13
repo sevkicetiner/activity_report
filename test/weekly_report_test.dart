@@ -1,5 +1,6 @@
 import 'package:activity_report/data/mock_usage_data_source.dart';
 import 'package:activity_report/models/report.dart';
+import 'package:activity_report/ui/format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -44,5 +45,13 @@ void main() {
       isDemo: true,
     );
     expect(noUnlocks.totalUnlocks, isNull);
+  });
+
+  test('short durations and small averages never read as zero', () {
+    expect(formatDuration(const Duration(seconds: 15)), '<1m');
+    expect(formatDuration(Duration.zero), '0m');
+    expect(formatDuration(const Duration(hours: 2, minutes: 5)), '2h 05m');
+    expect(formatAverage(2 / 7), '0.3');
+    expect(formatAverage(68.4), '68');
   });
 }
